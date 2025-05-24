@@ -23,9 +23,9 @@ def parse_table(table_lines):
     return df
 
 
-def run(class_1, class_2, lc):
+def run(input_path, class_1, class_2, lc):
     # Load CSV lines, skipping the first 15 lines
-    with open("building4testing.csv", encoding="iso-8859-1") as f:
+    with open(input_path, encoding="iso-8859-1") as f:
         lines = f.readlines()[15:]
 
     # Extract tables
@@ -72,6 +72,8 @@ def run(class_1, class_2, lc):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--input_path", required=True,
+                        type=str, help="Path of the input file")
     parser.add_argument("--class_1", required=True,
                         type=str, help="First section name")
     parser.add_argument("--class_2", required=True,
@@ -79,7 +81,8 @@ if __name__ == "__main__":
     parser.add_argument("--lc", required=True, type=str,
                         help="List of load cases, e.g. '[1, 2, 203]'")
     args = parser.parse_args()
+    input_path = args.input_path
     class_1 = args.class_1
     class_2 = args.class_2
     lc = [str(item) for item in ast.literal_eval(args.lc)]
-    run(class_1, class_2, lc)
+    run(input_path, class_1, class_2, lc)
