@@ -1,7 +1,12 @@
-# init app
-virtualenv -p python3 .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+## Ready the environment (In Windows)
+- python -m venv .venv
+- .venv\Scripts\activate
+- pip install -r requirements.txt
 
-# run the code like below
+## init app
+- virtualenv -p python3 .venv
+- source .venv/bin/activate
+- pip install -r requirements.txt
+
+## run the code like below
 python script.py --class_1=HE800A --class_2=IPE180 --lc='[1, 2]'
