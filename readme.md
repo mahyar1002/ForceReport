@@ -9,4 +9,4 @@
 - pip install -r requirements.txt
 
 ## run the code like below
-python script.py --input_path='building4testing.csv' --class_1=HE800A --class_2=IPE180 --lc='[1, 2]'
+python script.py --input_path='building4testing.csv' --class_1=HE800A --class_2=HE800A --lc='[1]'

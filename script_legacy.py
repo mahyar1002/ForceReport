@@ -23,13 +23,6 @@ def parse_table(table_lines):
     return df
 
 
-def get_intersection(set_1, set_2):
-    common = set_1 & set_2
-    if common and len(common) == 1:
-        return next(iter(common))
-    return None
-
-
 def run(input_path, class_1, class_2, lc):
     # Load CSV lines, skipping the first 15 lines
     with open(input_path, encoding="iso-8859-1") as f:
@@ -58,52 +51,13 @@ def run(input_path, class_1, class_2, lc):
         "beam_id", "node", "lc", "fx", "fy", "fz", "mx", "my", "mz"]
     beam_end_forces_df['beam_id'] = beam_end_forces_df['beam_id'].ffill()
 
-    filtered_sections_class_1_df = sections_df[sections_df["name"] == class_1]
-    filtered_sections_class_2_df = sections_df[sections_df["name"] == class_2]
-
-    filtered_beams_class_1_df = beams_df[beams_df["property_id"].isin(
-        filtered_sections_class_1_df["property_id"])]
-    filtered_beams_class_2_df = beams_df[beams_df["property_id"].isin(
-        filtered_sections_class_2_df["property_id"])]
-
-    # Step 1: Create the Cartesian product (cross join)
-    cross_df = filtered_beams_class_1_df.assign(key=1).merge(
-        filtered_beams_class_2_df.assign(key=1),
-        on="key",
-        suffixes=('_1', '_2')
-    ).drop(columns=["key"])
-
-    # Step 2: Remove rows with same beam_id
-    cross_df = cross_df[cross_df["beam_id_1"] != cross_df["beam_id_2"]]
-
-    # Step 3: Apply the intersection logic
-    def get_common_node(row):
-        nodes_1 = {row["node_a_1"], row["node_b_1"]}
-        nodes_2 = {row["node_a_2"], row["node_b_2"]}
-        common = nodes_1 & nodes_2
-        return common.pop() if common else None
-
-    cross_df["node"] = cross_df.apply(get_common_node, axis=1)
-
-    # Step 4: Filter rows where a common node was found
-    intersection_beams_df = cross_df[cross_df["node"].notnull()]
-    intersection_beams_df = intersection_beams_df.drop_duplicates()
-    intersection_beams_df = intersection_beams_df.drop_duplicates()
-
-    # Step 5: filter force dataframe based on intersection beams
+    filtered_sections_df = sections_df[sections_df["name"].isin(
+        [class_1, class_2])]
+    filtered_beams_df = beams_df[beams_df["property_id"].isin(
+        filtered_sections_df["property_id"])]
     filtered_forces_df = beam_end_forces_df[
-        (beam_end_forces_df["lc"].isin(lc)) &
-        (
-            beam_end_forces_df[["node", "beam_id"]]
-            .apply(tuple, axis=1)
-            .isin(
-                pd.concat([
-                    intersection_beams_df[["node", "beam_id_1"]].rename(columns={"beam_id_1": "beam_id"}),
-                    intersection_beams_df[["node", "beam_id_2"]].rename(columns={"beam_id_2": "beam_id"})
-                ])
-                .apply(tuple, axis=1)
-            )
-        )
+        (beam_end_forces_df["beam_id"].isin(filtered_beams_df["beam_id"])) &
+        (beam_end_forces_df["lc"].isin(lc))
     ]
 
     with pd.ExcelWriter("report.xlsx", engine='xlsxwriter') as writer:
