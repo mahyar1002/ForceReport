@@ -16,6 +16,46 @@ def extract_table(lines, start_keyword, next_keywords):
     return lines[start:end] if start is not None else []
 
 
+def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df):
+    reaction_df['property_id'] = None
+    reaction_df['property_name'] = None
+
+    # Iterate through each row of reaction_df
+    for idx, row in reaction_df.iterrows():
+        node = row['node']
+
+        # Step 1: Look up first beam_id for this node in beam_end_forces_df
+        beam_row = beam_end_forces_df[beam_end_forces_df['node'] == node]
+        if not beam_row.empty:
+            beam_id = beam_row.iloc[0]['beam_id']  # Get first beam_id
+
+            # Step 2: Look up property_id for this beam_id in beams_df
+            beam_info = beams_df[beams_df['beam_id'] == beam_id]
+            if not beam_info.empty:
+                # Get first property_id
+                property_id = beam_info.iloc[0]['property_id']
+
+                # Step 3: Look up property_name for this property_id in sections_df
+                section_info = sections_df[sections_df['property_id']
+                                           == property_id]
+                if not section_info.empty:
+                    # Get first property_name
+                    property_name = section_info.iloc[0]['name']
+
+                    # Add to reaction_df
+                    reaction_df.at[idx, 'property_id'] = property_id
+                    reaction_df.at[idx, 'property_name'] = property_name
+                else:
+                    print(
+                        f"{property_id} not found in section_df for node {node} and beam_id {beam_id}")
+            else:
+                print(f"{beam_id} not found in beams_df for node {node}")
+        else:
+            print(f"{node} not found in beam_end_forces_df")
+
+    return reaction_df
+
+
 def parse_table(table_lines):
     table_str = "\n".join(table_lines)
     df = pd.read_csv(StringIO(table_str), header=None)

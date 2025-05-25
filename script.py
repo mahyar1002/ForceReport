@@ -21,7 +21,7 @@ def parse_table(table_lines, dtype=None):
     if dtype is not None:
         df = pd.read_csv(StringIO(table_str), header=None, dtype=dtype)
     else:
-        df = pd.read_csv(StringIO(table_str), header=None)
+        df = pd.read_csv(StringIO(table_str), header=None, low_memory=False)
     df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
     return df
 
@@ -34,37 +34,23 @@ def get_intersection(set_1, set_2):
 
 
 def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df):
-    reaction_df['property_id'] = None
-    reaction_df['property_name'] = None
+    # Step 1: Get the first beam_id for each node from beam_end_forces_df
+    node_to_beam = beam_end_forces_df.drop_duplicates(
+        subset=['node'], keep='first')[['node', 'beam_id']]
 
-    # Iterate through each row of reaction_df
-    for idx, row in reaction_df.iterrows():
-        node = row['node']
-        
-        # Step 1: Look up first beam_id for this node in beam_end_forces_df
-        beam_row = beam_end_forces_df[beam_end_forces_df['node'] == node]
-        if not beam_row.empty:
-            beam_id = beam_row.iloc[0]['beam_id']  # Get first beam_id
-            
-            # Step 2: Look up property_id for this beam_id in beams_df
-            beam_info = beams_df[beams_df['beam_id'] == beam_id]
-            if not beam_info.empty:
-                property_id = beam_info.iloc[0]['property_id']  # Get first property_id
-                
-                # Step 3: Look up property_name for this property_id in sections_df
-                section_info = sections_df[sections_df['property_id'] == property_id]
-                if not section_info.empty:
-                    property_name = section_info.iloc[0]['name']  # Get first property_name
-                    
-                    # Add to reaction_df
-                    reaction_df.at[idx, 'property_id'] = property_id
-                    reaction_df.at[idx, 'property_name'] = property_name
-                else:
-                    print(f"{property_id} not found in section_df for node {node} and beam_id {beam_id}")
-            else:
-                print(f"{beam_id} not found in beams_df for node {node}")
-        else:
-            print(f"{node} not found in beam_end_forces_df")
+    # Step 2: Merge reaction_df with node_to_beam to get beam_id
+    reaction_df = reaction_df.merge(node_to_beam, on='node', how='left')
+
+    # Step 3: Merge with beams_df to get property_id
+    reaction_df = reaction_df.merge(
+        beams_df[['beam_id', 'property_id']], on='beam_id', how='left')
+
+    # Step 4: Merge with sections_df to get property_name
+    reaction_df = reaction_df.merge(
+        sections_df[['property_id', 'name']], on='property_id', how='left')
+
+    # Step 5: Rename the 'name' column to 'property_name'
+    reaction_df = reaction_df.rename(columns={'name': 'property_name'})
 
     return reaction_df
 
@@ -88,7 +74,8 @@ def run(input_path, class_1, class_2, lc):
     sections_df = sections_df.iloc[3:, 1:].reset_index(drop=True)
     sections_df.columns = ["property_id", "name",
                            "area", "iyy", "izz", "j", "material", "source"]
-    
+    sections_df['property_id'] = sections_df['property_id'].astype(int)
+
     print("Parsing beams...")
     beams_df = parse_table(beams_lines)
     beams_df = beams_df.iloc[3:, 1:].reset_index(drop=True)
@@ -97,6 +84,7 @@ def run(input_path, class_1, class_2, lc):
     beams_df['beam_id'] = beams_df['beam_id'].astype(int)
     beams_df['node_a'] = beams_df['node_a'].astype(int)
     beams_df['node_b'] = beams_df['node_b'].astype(int)
+    beams_df['property_id'] = beams_df['property_id'].astype(int)
 
     print("Parsing forces...")
     beam_end_forces_df = parse_table(beam_end_forces_lines)
@@ -115,6 +103,7 @@ def run(input_path, class_1, class_2, lc):
     reaction_df['node'] = reaction_df['node'].astype(int)
     reaction_df = update_reaction_table(
         sections_df, beams_df, beam_end_forces_df, reaction_df)
+    reaction_df = reaction_df[reaction_df["lc"].isin(lc)]
 
     filtered_sections_class_1_df = sections_df[sections_df["name"] == class_1]
     filtered_sections_class_2_df = sections_df[sections_df["name"] == class_2]
@@ -123,7 +112,6 @@ def run(input_path, class_1, class_2, lc):
         filtered_sections_class_1_df["property_id"])]
     filtered_beams_class_2_df = beams_df[beams_df["property_id"].isin(
         filtered_sections_class_2_df["property_id"])]
-
 
     # Step 1: Create the Cartesian product (cross join)
     cross_df = filtered_beams_class_1_df.assign(key=1).merge(
