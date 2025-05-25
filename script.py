@@ -34,44 +34,79 @@ def get_intersection(set_1, set_2):
 
 
 def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df):
-    reaction_df['property_id'] = None
-    reaction_df['property_name'] = None
+    # Step 1: Get the first beam_id for each node from beam_end_forces_df
+    node_to_beam = beam_end_forces_df.drop_duplicates(
+        subset=['node'], keep='first')[['node', 'beam_id']]
 
-    # Iterate through each row of reaction_df
-    for idx, row in reaction_df.iterrows():
-        node = row['node']
+    # Step 2: Merge reaction_df with node_to_beam to get beam_id
+    reaction_df = reaction_df.merge(node_to_beam, on='node', how='left')
 
-        # Step 1: Look up first beam_id for this node in beam_end_forces_df
-        beam_row = beam_end_forces_df[beam_end_forces_df['node'] == node]
-        if not beam_row.empty:
-            beam_id = beam_row.iloc[0]['beam_id']  # Get first beam_id
+    # Step 3: Merge with beams_df to get property_id
+    reaction_df = reaction_df.merge(
+        beams_df[['beam_id', 'property_id']], on='beam_id', how='left')
 
-            # Step 2: Look up property_id for this beam_id in beams_df
-            beam_info = beams_df[beams_df['beam_id'] == beam_id]
-            if not beam_info.empty:
-                # Get first property_id
-                property_id = beam_info.iloc[0]['property_id']
+    # Step 4: Merge with sections_df to get property_name
+    reaction_df = reaction_df.merge(
+        sections_df[['property_id', 'name']], on='property_id', how='left')
 
-                # Step 3: Look up property_name for this property_id in sections_df
-                section_info = sections_df[sections_df['property_id']
-                                           == property_id]
-                if not section_info.empty:
-                    # Get first property_name
-                    property_name = section_info.iloc[0]['name']
-
-                    # Add to reaction_df
-                    reaction_df.at[idx, 'property_id'] = property_id
-                    reaction_df.at[idx, 'property_name'] = property_name
-                else:
-                    print(
-                        f"{property_id} not found in section_df for node {node} and beam_id {beam_id}")
-            else:
-                print(f"{beam_id} not found in beams_df for node {node}")
-        else:
-            print(f"{node} not found in beam_end_forces_df")
+    # Step 5: Rename the 'name' column to 'property_name'
+    reaction_df = reaction_df.rename(columns={'name': 'property_name'})
 
     return reaction_df
 
+def force_report(sections_df, beams_df, beam_end_forces_df):
+
+    filtered_sections_class_1_df = sections_df[sections_df["name"] == class_1]
+    filtered_sections_class_2_df = sections_df[sections_df["name"] == class_2]
+
+    filtered_beams_class_1_df = beams_df[beams_df["property_id"].isin(
+        filtered_sections_class_1_df["property_id"])]
+    filtered_beams_class_2_df = beams_df[beams_df["property_id"].isin(
+        filtered_sections_class_2_df["property_id"])]
+
+    # Step 1: Create the Cartesian product (cross join)
+    cross_df = filtered_beams_class_1_df.assign(key=1).merge(
+        filtered_beams_class_2_df.assign(key=1),
+        on="key",
+        suffixes=('_1', '_2')
+    ).drop(columns=["key"])
+
+    # Step 2: Remove rows with same beam_id
+    cross_df = cross_df[cross_df["beam_id_1"] != cross_df["beam_id_2"]]
+
+    # Step 3: Apply the intersection logic
+    def get_common_node(row):
+        nodes_1 = {row["node_a_1"], row["node_b_1"]}
+        nodes_2 = {row["node_a_2"], row["node_b_2"]}
+        common = nodes_1 & nodes_2
+        return common.pop() if common else None
+
+    cross_df["node"] = cross_df.apply(get_common_node, axis=1)
+
+    # Step 4: Filter rows where a common node was found
+    intersection_beams_df = cross_df[cross_df["node"].notnull()]
+    intersection_beams_df = intersection_beams_df.drop_duplicates()
+    intersection_beams_df = intersection_beams_df.drop_duplicates()
+
+    # Step 5: filter force dataframe based on intersection beams
+    filtered_forces_df = beam_end_forces_df[
+        (beam_end_forces_df["lc"].isin(lc)) &
+        (
+            beam_end_forces_df[["node", "beam_id"]]
+            .apply(tuple, axis=1)
+            .isin(
+                pd.concat([
+                    intersection_beams_df[["node", "beam_id_1"]].rename(
+                        columns={"beam_id_1": "beam_id"}),
+                    intersection_beams_df[["node", "beam_id_2"]].rename(
+                        columns={"beam_id_2": "beam_id"})
+                ])
+                .apply(tuple, axis=1)
+            )
+        )
+    ]
+    
+    return filtered_forces_df
 
 def run(input_path, class_1, class_2, lc):
     # Load CSV lines, skipping the first 15 lines
@@ -131,56 +166,8 @@ def run(input_path, class_1, class_2, lc):
         sections_df, beams_df, beam_end_forces_df, reaction_df)
     reaction_df = reaction_df[reaction_df["lc"].isin(lc)]
 
-    filtered_sections_class_1_df = sections_df[sections_df["name"] == class_1]
-    filtered_sections_class_2_df = sections_df[sections_df["name"] == class_2]
-
-    filtered_beams_class_1_df = beams_df[beams_df["property_id"].isin(
-        filtered_sections_class_1_df["property_id"])]
-    filtered_beams_class_2_df = beams_df[beams_df["property_id"].isin(
-        filtered_sections_class_2_df["property_id"])]
-
-    # Step 1: Create the Cartesian product (cross join)
-    cross_df = filtered_beams_class_1_df.assign(key=1).merge(
-        filtered_beams_class_2_df.assign(key=1),
-        on="key",
-        suffixes=('_1', '_2')
-    ).drop(columns=["key"])
-
-    # Step 2: Remove rows with same beam_id
-    cross_df = cross_df[cross_df["beam_id_1"] != cross_df["beam_id_2"]]
-
-    # Step 3: Apply the intersection logic
-    def get_common_node(row):
-        nodes_1 = {row["node_a_1"], row["node_b_1"]}
-        nodes_2 = {row["node_a_2"], row["node_b_2"]}
-        common = nodes_1 & nodes_2
-        return common.pop() if common else None
-
-    cross_df["node"] = cross_df.apply(get_common_node, axis=1)
-
-    # Step 4: Filter rows where a common node was found
-    intersection_beams_df = cross_df[cross_df["node"].notnull()]
-    intersection_beams_df = intersection_beams_df.drop_duplicates()
-    intersection_beams_df = intersection_beams_df.drop_duplicates()
-
-    # Step 5: filter force dataframe based on intersection beams
-    filtered_forces_df = beam_end_forces_df[
-        (beam_end_forces_df["lc"].isin(lc)) &
-        (
-            beam_end_forces_df[["node", "beam_id"]]
-            .apply(tuple, axis=1)
-            .isin(
-                pd.concat([
-                    intersection_beams_df[["node", "beam_id_1"]].rename(
-                        columns={"beam_id_1": "beam_id"}),
-                    intersection_beams_df[["node", "beam_id_2"]].rename(
-                        columns={"beam_id_2": "beam_id"})
-                ])
-                .apply(tuple, axis=1)
-            )
-        )
-    ]
-
+    filtered_forces_df = force_report(sections_df, beams_df, beam_end_forces_df)
+    
     with pd.ExcelWriter("report.xlsx", engine='xlsxwriter') as writer:
         filtered_forces_df.to_excel(
             writer, sheet_name="final force report", index=False)
