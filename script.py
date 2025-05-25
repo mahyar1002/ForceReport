@@ -34,23 +34,41 @@ def get_intersection(set_1, set_2):
 
 
 def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df):
-    # Step 1: Get the first beam_id for each node from beam_end_forces_df
-    node_to_beam = beam_end_forces_df.drop_duplicates(
-        subset=['node'], keep='first')[['node', 'beam_id']]
+    reaction_df['property_id'] = None
+    reaction_df['property_name'] = None
 
-    # Step 2: Merge reaction_df with node_to_beam to get beam_id
-    reaction_df = reaction_df.merge(node_to_beam, on='node', how='left')
+    # Iterate through each row of reaction_df
+    for idx, row in reaction_df.iterrows():
+        node = row['node']
 
-    # Step 3: Merge with beams_df to get property_id
-    reaction_df = reaction_df.merge(
-        beams_df[['beam_id', 'property_id']], on='beam_id', how='left')
+        # Step 1: Look up first beam_id for this node in beam_end_forces_df
+        beam_row = beam_end_forces_df[beam_end_forces_df['node'] == node]
+        if not beam_row.empty:
+            beam_id = beam_row.iloc[0]['beam_id']  # Get first beam_id
 
-    # Step 4: Merge with sections_df to get property_name
-    reaction_df = reaction_df.merge(
-        sections_df[['property_id', 'name']], on='property_id', how='left')
+            # Step 2: Look up property_id for this beam_id in beams_df
+            beam_info = beams_df[beams_df['beam_id'] == beam_id]
+            if not beam_info.empty:
+                # Get first property_id
+                property_id = beam_info.iloc[0]['property_id']
 
-    # Step 5: Rename the 'name' column to 'property_name'
-    reaction_df = reaction_df.rename(columns={'name': 'property_name'})
+                # Step 3: Look up property_name for this property_id in sections_df
+                section_info = sections_df[sections_df['property_id']
+                                           == property_id]
+                if not section_info.empty:
+                    # Get first property_name
+                    property_name = section_info.iloc[0]['name']
+
+                    # Add to reaction_df
+                    reaction_df.at[idx, 'property_id'] = property_id
+                    reaction_df.at[idx, 'property_name'] = property_name
+                else:
+                    print(
+                        f"{property_id} not found in section_df for node {node} and beam_id {beam_id}")
+            else:
+                print(f"{beam_id} not found in beams_df for node {node}")
+        else:
+            print(f"{node} not found in beam_end_forces_df")
 
     return reaction_df
 
@@ -58,17 +76,25 @@ def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df
 def run(input_path, class_1, class_2, lc):
     # Load CSV lines, skipping the first 15 lines
     with open(input_path, encoding="iso-8859-1") as f:
-        lines = f.readlines()[15:]
+        lines = f.readlines()[30:]
 
     # Extract tables
-    beams_lines = extract_table(lines, "Beams", ["Sections"])
-    sections_lines = extract_table(lines, "Sections", ["Supports"])
+    nodes_lines = extract_table(lines, "Nodes", ["Beams"])
+    beams_lines = extract_table(lines, "Beams", ["Supports", "Sections"])
+    sections_lines = extract_table(
+        lines, "Sections", ["Supports",  "STAAD.Pro"])
     reaction_lines = extract_table(
         lines, "Reactions", ["Beam End Forces"])
     beam_end_forces_lines = extract_table(
-        lines, "Beam End Forces", ["18 May", "STAAD.Pro"])
+        lines, "Beam End Forces", ["Max Forces by Property"])
 
     # Parse to DataFrames
+    print("Parsing nodes...")
+    nodes_df = parse_table(nodes_lines)
+    nodes_df = nodes_df.iloc[3:, 1:].reset_index(drop=True)
+    nodes_df.columns = ["node", "x", "y", "z"]
+    nodes_df['node'] = nodes_df['node'].astype(int)
+
     print("Parsing sections...")
     sections_df = parse_table(sections_lines)
     sections_df = sections_df.iloc[3:, 1:].reset_index(drop=True)
@@ -165,6 +191,8 @@ def run(input_path, class_1, class_2, lc):
             writer, sheet_name="extracted forces", index=False)
         reaction_df.to_excel(
             writer, sheet_name="extracted reactions", index=False)
+        nodes_df.to_excel(
+            writer, sheet_name="extracted nodes", index=False)
 
 
 if __name__ == "__main__":
