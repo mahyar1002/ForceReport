@@ -54,8 +54,8 @@ def update_reaction_table(sections_df, beams_df, beam_end_forces_df, reaction_df
 
     return reaction_df
 
-def force_report(sections_df, beams_df, beam_end_forces_df):
 
+def force_report(sections_df, beams_df, beam_end_forces_df, nodes_df):
     filtered_sections_class_1_df = sections_df[sections_df["name"] == class_1]
     filtered_sections_class_2_df = sections_df[sections_df["name"] == class_2]
 
@@ -79,7 +79,48 @@ def force_report(sections_df, beams_df, beam_end_forces_df):
         nodes_1 = {row["node_a_1"], row["node_b_1"]}
         nodes_2 = {row["node_a_2"], row["node_b_2"]}
         common = nodes_1 & nodes_2
-        return common.pop() if common else None
+        
+        # Condition 1: Check if common node exists
+        if not common:
+            return None
+        
+        # Remove common nodes from combination of sets
+        remaining_nodes = (nodes_1 | nodes_2) - common
+        
+        # Should have exactly 2 remaining nodes after removing common node(s)
+        if len(remaining_nodes) != 2:
+            return None
+        
+        # Convert to list to access by index
+        remaining_nodes_list = list(remaining_nodes)
+        node1 = remaining_nodes_list[0]
+        node2 = remaining_nodes_list[1]
+        
+        # Condition 2: Check if these two nodes have at least two common values on their axis (x,y,z)
+        try:
+            # Get coordinates for both nodes
+            node1_info = nodes_df[nodes_df['node'] == node1].iloc[0]
+            node2_info = nodes_df[nodes_df['node'] == node2].iloc[0]
+            
+            # Check how many coordinates are the same
+            common_coordinates = 0
+            if node1_info['x'] == node2_info['x']:
+                common_coordinates += 1
+            if node1_info['y'] == node2_info['y']:
+                common_coordinates += 1
+            if node1_info['z'] == node2_info['z']:
+                common_coordinates += 1
+            
+            # If at least two coordinates are common, return None
+            if common_coordinates >= 2:
+                return None
+            else:
+                # Otherwise return the common node
+                return common.pop()
+                
+        except (IndexError, KeyError):
+            # If nodes not found in nodes_df, return None
+            return None
 
     cross_df["node"] = cross_df.apply(get_common_node, axis=1)
 
@@ -105,8 +146,9 @@ def force_report(sections_df, beams_df, beam_end_forces_df):
             )
         )
     ]
-    
+
     return filtered_forces_df
+
 
 def run(input_path, class_1, class_2, lc):
     # Load CSV lines, skipping the first 15 lines
@@ -166,8 +208,9 @@ def run(input_path, class_1, class_2, lc):
         sections_df, beams_df, beam_end_forces_df, reaction_df)
     reaction_df = reaction_df[reaction_df["lc"].isin(lc)]
 
-    filtered_forces_df = force_report(sections_df, beams_df, beam_end_forces_df)
-    
+    filtered_forces_df = force_report(
+        sections_df, beams_df, beam_end_forces_df, nodes_df)
+
     with pd.ExcelWriter("report.xlsx", engine='xlsxwriter') as writer:
         filtered_forces_df.to_excel(
             writer, sheet_name="final force report", index=False)
