@@ -3,6 +3,7 @@ import argparse
 import ast
 from io import StringIO
 
+ERROR_OFFSET = 0.1
 
 def extract_table(lines, start_keyword, next_keywords):
     start = None
@@ -104,12 +105,11 @@ def force_report(sections_df, beams_df, beam_end_forces_df, nodes_df):
 
             # Check how many coordinates are the same
             common_coordinates = 0
-            offset = 0.1
-            if abs(float(node1_info['x']) - float(node2_info['x'])) <= offset:
+            if abs(float(node1_info['x']) - float(node2_info['x'])) <= ERROR_OFFSET:
                 common_coordinates += 1
-            if abs(float(node1_info['y']) - float(node2_info['y'])) <= offset:
+            if abs(float(node1_info['y']) - float(node2_info['y'])) <= ERROR_OFFSET:
                 common_coordinates += 1
-            if abs(float(node1_info['z']) - float(node2_info['z'])) <= offset:
+            if abs(float(node1_info['z']) - float(node2_info['z'])) <= ERROR_OFFSET:
                 common_coordinates += 1
 
             # If at least two coordinates are common, return None
