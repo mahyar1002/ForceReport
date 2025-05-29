@@ -3,7 +3,7 @@ import argparse
 import ast
 from io import StringIO
 
-ERROR_OFFSET = 0.1
+ERROR_OFFSET = 0.01
 
 def extract_table(lines, start_keyword, next_keywords):
     start = None
