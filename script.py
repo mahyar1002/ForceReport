@@ -208,6 +208,7 @@ def run(input_path, class_1, class_2, lc):
     reaction_df = update_reaction_table(
         sections_df, beams_df, beam_end_forces_df, reaction_df)
     reaction_df = reaction_df[reaction_df["lc"].isin(lc)]
+    reaction_df = reaction_df.sort_values(by='property_name', ascending=False)
 
     filtered_forces_df = force_report(
         sections_df, beams_df, beam_end_forces_df, nodes_df)
